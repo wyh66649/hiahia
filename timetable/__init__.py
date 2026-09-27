@@ -2,10 +2,11 @@
 
 对外 API::
 
-    from timetable import Timetable, load_csv, render_timetable
+    from timetable import load_csv, render_timetable, daily_free_slots
 
     tt = load_csv("data/student_a.csv")
     print(render_timetable(tt))
+    print(daily_free_slots(tt, 8 * 60, 22 * 60))
 
 模块划分：
 
@@ -14,6 +15,7 @@
 ``loader``           读入层：标准 CSV、教务网格 CSV、手动录入
 ``raw_parser``       教务系统导出格式的解析细节
 ``display``          文本视图渲染（按天列表 / 周视图）
+``slots``            合并连续节次 + 计算每日空闲时段
 ===================  ==================================================
 """
 
@@ -42,8 +44,19 @@ from .models import (
     weekday_name,
 )
 from .raw_parser import RawCourse, RawTimetable, looks_like_grid, parse_grid_text
+from .slots import (
+    DEFAULT_DAY_END,
+    DEFAULT_DAY_START,
+    DEFAULT_MERGE_GAP,
+    busy_slots,
+    daily_free_slots,
+    free_slots,
+    merge_courses,
+    merged_courses_by_day,
+    render_free_slots,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # 模型
@@ -78,5 +91,15 @@ __all__ = [
     "display_width",
     "pad",
     "truncate",
+    # 空闲时段
+    "merge_courses",
+    "merged_courses_by_day",
+    "busy_slots",
+    "free_slots",
+    "daily_free_slots",
+    "render_free_slots",
+    "DEFAULT_MERGE_GAP",
+    "DEFAULT_DAY_START",
+    "DEFAULT_DAY_END",
     "__version__",
 ]

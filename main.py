@@ -7,7 +7,10 @@
     python main.py show --csv data/student_a.csv
 
     # 教务系统导出的网格课表也能直接读
-    python main.py show --csv data/raw_timetable_sample.csv --grid
+    python main.py show --csv data/raw_timetable_sample.csv --view grid
+
+    # 算空闲时段（每日可用 08:00-22:00）
+    python main.py free --csv data/student_a.csv --day-start 08:00 --day-end 22:00
 
     # 手动录入
     python main.py manual
@@ -21,20 +24,30 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-# 允许直接 `python main.py` 跑，也能 `python -m timetable` 跑
+# 允许直接 `python main.py` 跑
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from timetable import (  # noqa: E402
+    DEFAULT_MERGE_GAP,
     Timetable,
+    daily_free_slots,
     load_csv,
+    merged_courses_by_day,
+    parse_time,
+    parse_weekday,
     prompt_manual_timetable,
+    render_free_slots,
     render_timetable,
+    weekday_name,
 )
 from timetable.raw_parser import deduplicate, parse_grid_text  # noqa: E402
 
-DEFAULT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "student_a.csv")
+__version__ = "0.2.0"
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CSV = os.path.join(ROOT, "data", "student_a.csv")
 
 
 # --------------------------------------------------------------------------
@@ -47,12 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--version", action="version", version="timetable 0.1.0")
+    parser.add_argument("--version", action="version", version=f"timetable {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="命令")
 
     # ---- show ----
     show = sub.add_parser("show", help="读入课表并打印「本周课表」文本视图")
     _add_source_args(show)
+    _add_merge_args(show)
     show.add_argument(
         "--view",
         choices=["day", "grid"],
@@ -60,14 +74,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="展示方式：day = 按天列表（默认），grid = 周视图表格",
     )
 
+    # ---- free ----
+    free = sub.add_parser("free", help="算出每天的可用空闲时段")
+    _add_source_args(free)
+    _add_merge_args(free)
+    free.add_argument("--day-start", default="08:00", help="每天可用的开始时间，默认 08:00")
+    free.add_argument("--day-end", default="22:00", help="每天可用的结束时间，默认 22:00")
+    free.add_argument(
+        "--min-minutes",
+        type=int,
+        default=0,
+        metavar="分钟",
+        help="只显示不短于这个长度的空闲时段，默认 0（全部保留）",
+    )
+    free.add_argument("--day", default=None, metavar="星期", help="只看某一天，例如 --day 周三")
+
     # ---- manual ----
     manual = sub.add_parser("manual", help="在终端里手动录入课表并打印")
     manual.add_argument("--owner", default="我", help="课表主人，默认「我」")
     manual.add_argument(
-        "--view",
-        choices=["day", "grid"],
-        default="day",
-        help="展示方式，默认 day",
+        "--view", choices=["day", "grid"], default="day", help="展示方式，默认 day"
     )
 
     # ---- convert ----
@@ -92,6 +118,30 @@ def _add_source_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--encoding", default=None, help="强制指定文件编码（默认自动识别）")
 
 
+def _add_merge_args(parser: argparse.ArgumentParser) -> None:
+    """合并连续节次相关的参数（需求 2）。"""
+    parser.add_argument(
+        "--merge",
+        dest="merge",
+        action="store_true",
+        default=True,
+        help="合并同一课程的连续节次（默认开启）",
+    )
+    parser.add_argument(
+        "--no-merge",
+        dest="merge",
+        action="store_false",
+        help="不合并，保留每一节，能直观对比出碎片的效果",
+    )
+    parser.add_argument(
+        "--gap",
+        type=int,
+        default=DEFAULT_MERGE_GAP,
+        metavar="分钟",
+        help=f"两节之间不超过多少分钟算连续，默认 {DEFAULT_MERGE_GAP}",
+    )
+
+
 # --------------------------------------------------------------------------
 # 公共工具
 # --------------------------------------------------------------------------
@@ -107,18 +157,70 @@ def load_sources(args) -> List[Timetable]:
     return timetables
 
 
-def print_timetables(timetables, view: str = "day") -> None:
+def print_timetables(
+    timetables: List[Timetable],
+    view: str = "day",
+    merge: bool = True,
+    gap: int = DEFAULT_MERGE_GAP,
+) -> None:
     for index, timetable in enumerate(timetables):
         if index:
             print()
-        print(render_timetable(timetable, mode=view))
+        by_day = merged_courses_by_day(timetable, max_gap=gap) if merge else None
+        print(render_timetable(timetable, mode=view, courses_by_day=by_day))
+
+
+def parse_day_range(args) -> Tuple[int, int]:
+    """把 ``--day-start`` / ``--day-end`` 解析成分钟数。"""
+    start = parse_time(args.day_start)
+    end = parse_time(args.day_end)
+    if start >= end:
+        raise SystemExit(f"✗ 可用时间范围非法：{args.day_start}-{args.day_end}")
+    return start, end
 
 
 # --------------------------------------------------------------------------
 # 子命令
 # --------------------------------------------------------------------------
 def cmd_show(args) -> int:
-    print_timetables(load_sources(args), view=args.view)
+    print_timetables(load_sources(args), view=args.view, merge=args.merge, gap=args.gap)
+    return 0
+
+
+def cmd_free(args) -> int:
+    day_start, day_end = parse_day_range(args)
+    timetables = load_sources(args)
+
+    only_day: Optional[int] = None
+    if args.day:
+        try:
+            only_day = parse_weekday(args.day)
+        except ValueError as error:
+            raise SystemExit(f"✗ {error}")
+
+    for index, timetable in enumerate(timetables):
+        if index:
+            print()
+        free_by_day = daily_free_slots(
+            timetable,
+            day_start=day_start,
+            day_end=day_end,
+            merge=args.merge,
+            max_gap=args.gap,
+            min_minutes=args.min_minutes,
+        )
+        if only_day is not None:
+            print(f"（只看 {weekday_name(only_day)}）")
+            free_by_day = {only_day: free_by_day[only_day]}
+        print(
+            render_free_slots(
+                timetable,
+                free_by_day=free_by_day,
+                day_start=day_start,
+                day_end=day_end,
+                show_empty=only_day is None,
+            )
+        )
     return 0
 
 
@@ -162,16 +264,18 @@ def cmd_menu() -> int:
     """没给子命令时，打印一份简短的上手指引。"""
     print(
         "课表解析与空闲时段计算小工具\n\n"
-        "  python main.py show     --csv data/student_a.csv     打印本周课表\n"
+        "  python main.py show --csv data/student_a.csv         打印本周课表\n"
+        "  python main.py free --csv data/student_a.csv         算空闲时段\n"
         "  python main.py manual                                 手动录入课表\n"
-        "  python main.py convert  data/raw_timetable_sample.csv 转换教务原始课表\n\n"
-        "加 -h 看每个命令的详细用法：python main.py show -h"
+        "  python main.py convert data/raw_timetable_sample.csv  转换教务原始课表\n\n"
+        "加 -h 看每个命令的详细用法：python main.py free -h"
     )
     return 0
 
 
 COMMANDS = {
     "show": cmd_show,
+    "free": cmd_free,
     "manual": cmd_manual,
     "convert": cmd_convert,
 }
