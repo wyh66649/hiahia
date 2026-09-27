@@ -12,6 +12,9 @@
     # 算空闲时段（每日可用 08:00-22:00）
     python main.py free --csv data/student_a.csv --day-start 08:00 --day-end 22:00
 
+    # 找两个人的共同空闲时段（按长度降序）
+    python main.py common --csv data/student_a.csv --csv data/student_b.csv
+
     # 手动录入
     python main.py manual
 
@@ -32,19 +35,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from timetable import (  # noqa: E402
     DEFAULT_MERGE_GAP,
     Timetable,
+    common_free_slots,
     daily_free_slots,
     load_csv,
     merged_courses_by_day,
     parse_time,
     parse_weekday,
     prompt_manual_timetable,
+    render_common_slots,
     render_free_slots,
     render_timetable,
     weekday_name,
 )
 from timetable.raw_parser import deduplicate, parse_grid_text  # noqa: E402
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CSV = os.path.join(ROOT, "data", "student_a.csv")
@@ -88,6 +93,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="只显示不短于这个长度的空闲时段，默认 0（全部保留）",
     )
     free.add_argument("--day", default=None, metavar="星期", help="只看某一天，例如 --day 周三")
+
+    # ---- common ----
+    common = sub.add_parser("common", help="算出多个人的共同空闲时段（按空闲时长降序）")
+    _add_source_args(common)
+    _add_merge_args(common)
+    common.add_argument("--day-start", default="08:00", help="每天可用的开始时间，默认 08:00")
+    common.add_argument("--day-end", default="22:00", help="每天可用的结束时间，默认 22:00")
+    common.add_argument(
+        "--min-minutes",
+        type=int,
+        default=0,
+        metavar="分钟",
+        help="只显示不短于这个长度的空闲时段，默认 0",
+    )
+    common.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        metavar="N",
+        help="只显示最长的前 N 段，默认全部显示",
+    )
 
     # ---- manual ----
     manual = sub.add_parser("manual", help="在终端里手动录入课表并打印")
@@ -224,6 +250,34 @@ def cmd_free(args) -> int:
     return 0
 
 
+def cmd_common(args) -> int:
+    day_start, day_end = parse_day_range(args)
+    timetables = load_sources(args)
+
+    if len(timetables) < 2:
+        print("提示：只给了 1 份课表，结果和它的个人空闲时段是一样的。")
+        print()
+
+    slots = common_free_slots(
+        timetables,
+        day_start=day_start,
+        day_end=day_end,
+        merge=args.merge,
+        max_gap=args.gap,
+        min_minutes=args.min_minutes,
+    )
+    print(
+        render_common_slots(
+            timetables,
+            slots=slots,
+            day_start=day_start,
+            day_end=day_end,
+            top=args.top,
+        )
+    )
+    return 0
+
+
 def cmd_manual(args) -> int:
     timetable = prompt_manual_timetable(owner=args.owner)
     if not timetable.courses:
@@ -264,11 +318,13 @@ def cmd_menu() -> int:
     """没给子命令时，打印一份简短的上手指引。"""
     print(
         "课表解析与空闲时段计算小工具\n\n"
-        "  python main.py show --csv data/student_a.csv         打印本周课表\n"
-        "  python main.py free --csv data/student_a.csv         算空闲时段\n"
-        "  python main.py manual                                 手动录入课表\n"
-        "  python main.py convert data/raw_timetable_sample.csv  转换教务原始课表\n\n"
-        "加 -h 看每个命令的详细用法：python main.py free -h"
+        "  python main.py show   --csv data/student_a.csv                打印本周课表\n"
+        "  python main.py free   --csv data/student_a.csv                算空闲时段\n"
+        "  python main.py common --csv data/student_a.csv \\\n"
+        "                        --csv data/student_b.csv                找共同空闲\n"
+        "  python main.py manual                                          手动录入课表\n"
+        "  python main.py convert data/raw_timetable_sample.csv           转换教务原始课表\n\n"
+        "加 -h 看每个命令的详细用法：python main.py common -h"
     )
     return 0
 
@@ -276,6 +332,7 @@ def cmd_menu() -> int:
 COMMANDS = {
     "show": cmd_show,
     "free": cmd_free,
+    "common": cmd_common,
     "manual": cmd_manual,
     "convert": cmd_convert,
 }

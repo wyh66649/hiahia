@@ -15,7 +15,7 @@
 
 - ✅ **需求 1** 读入课表（手动录入 / CSV），打印「本周课表」文本视图
 - ✅ **需求 2** 算空闲时段（合并同一课程连续节次，不出现碎片）
-- 🚧 需求 3 找共同空闲时间（待实现）
+- ✅ **需求 3** 找多人的共同空闲时间（按空闲长度降序）
 
 ## 快速开始
 
@@ -30,6 +30,12 @@ python main.py show --csv data/student_a.csv
 
 # 换成周视图表格
 python main.py show --csv data/student_a.csv --view grid
+
+# 算空闲时段
+python main.py free --csv data/student_a.csv --day-start 08:00 --day-end 22:00
+
+# 找两个人的共同空闲时段
+python main.py common --csv data/student_a.csv --csv data/student_b.csv
 
 # 手动录课
 python main.py manual
@@ -157,17 +163,56 @@ python main.py free --csv data/student_a.csv --day 周一 --no-merge # 多出一
 
 `show --view day/grid` 默认也走合并后的视图，加 `--no-merge` 可以看每一节的原始排布。
 
+## 需求 3：找共同空闲时间
+
+把多个人的课表一起丢进来，算出**所有人都空着**的时段：
+
+```bash
+python main.py common --csv data/student_a.csv --csv data/student_b.csv
+python main.py common --csv 我.csv --csv 室友.csv --csv 组长.csv --top 5   # 只看最长的 5 段
+```
+
+`--csv` 想写几个写几个。结果按空闲时长**降序**排列：
+
+```
+共同空闲时段 · 2 人（student_a、student_b）
+每日可用 08:00 - 22:00，按空闲时长降序
+========================================================
+   1. 周日 08:00-22:00      14 小时
+   2. 周五 09:40-22:00      12 小时 20 分
+   3. 周三 11:40-22:00      10 小时 20 分
+   4. 周六 11:40-22:00      10 小时 20 分
+   5. 周一 15:40-22:00      6 小时 20 分
+   ...
+--------------------------------------------------------
+共 13 段可共同安排的时间。
+```
+
+### 为什么不能把所有人的课「摞在一起」再算空闲
+
+因为「共同空闲」的语义是 *所有人都空着*，不是 *没有人上课*。
+
+如果先把三个人的课表合并成一张，再算空闲，那么「甲有课、乙没课」的时间也会被算成占用，
+结果会**偏小**，把本来能约的时段漏掉。所以流程是：
+
+1. 每个人各自算每日空闲（复用需求 2 的合并逻辑）；
+2. 逐天对所有空闲列表取**交集**（双指针，O(n+m)）；
+3. 汇总后按「越长越靠前」排序，长度相同按星期、开始时间排，保证输出稳定。
+
+`--min-minutes` 可以过滤掉太短的片段，`--gap` / `--no-merge` 会一路透传到每个人自己的空闲计算里。
+
 ## 目录结构
 
 ```
 hiahia/
-├── main.py                       # 命令行入口（show / manual / convert）
+├── main.py                       # 命令行入口（show / free / common / manual / convert）
 ├── timetable/
 │   ├── models.py                 # 时间 / 时间段 / 课程 / 课表模型
 │   ├── loader.py                 # 读入层：CSV 自适应 + 手动录入
 │   ├── raw_parser.py             # 教务系统网格课表的解析细节
 │   ├── display.py                # 文本视图渲染
-│   └── slots.py                  # 合并连续节次 + 计算每日空闲时段
+│   ├── slots.py                  # 合并连续节次 + 计算每日空闲时段
+│   └── common.py                 # 多份课表求共同空闲时段
 ├── data/
 │   ├── student_a.csv             # 标准格式示例
 │   ├── student_b.csv             # 标准格式示例

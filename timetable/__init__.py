@@ -16,9 +16,11 @@
 ``raw_parser``       教务系统导出格式的解析细节
 ``display``          文本视图渲染（按天列表 / 周视图）
 ``slots``            合并连续节次 + 计算每日空闲时段
+``common``           多份课表求共同空闲时段
 ===================  ==================================================
 """
 
+from .common import CommonSlot, common_free_slots, intersect_slots, render_common_slots
 from .display import display_width, pad, render_grid, render_timetable, truncate
 from .loader import (
     STANDARD_FIELDS,
@@ -56,7 +58,7 @@ from .slots import (
     render_free_slots,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # 模型
@@ -101,5 +103,10 @@ __all__ = [
     "DEFAULT_MERGE_GAP",
     "DEFAULT_DAY_START",
     "DEFAULT_DAY_END",
+    # 共同空闲
+    "CommonSlot",
+    "common_free_slots",
+    "intersect_slots",
+    "render_common_slots",
     "__version__",
 ]
