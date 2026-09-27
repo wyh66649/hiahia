@@ -7,19 +7,19 @@
     python main.py show --csv data/student_a.csv
 
     # 教务系统导出的网格课表也能直接读
-    python main.py show --csv data/raw_timetable_sample.csv --view grid
+    python main.py show --csv data/同学A课表.csv --view grid
 
     # 算空闲时段（每日可用 08:00-22:00）
     python main.py free --csv data/student_a.csv --day-start 08:00 --day-end 22:00
 
     # 找两个人的共同空闲时段（按长度降序）
-    python main.py common --csv data/student_a.csv --csv data/student_b.csv
+    python main.py common --csv data/同学A课表.csv --csv data/同学B课表.csv
 
     # 手动录入
     python main.py manual
 
     # 把教务导出的原始课表转成标准格式，方便二次编辑
-    python main.py convert data/raw_timetable_sample.csv -o data/converted.csv
+    python main.py convert data/同学A课表.csv -o data/converted.csv
 """
 
 from __future__ import annotations
@@ -318,12 +318,12 @@ def cmd_menu() -> int:
     """没给子命令时，打印一份简短的上手指引。"""
     print(
         "课表解析与空闲时段计算小工具\n\n"
-        "  python main.py show   --csv data/student_a.csv                打印本周课表\n"
-        "  python main.py free   --csv data/student_a.csv                算空闲时段\n"
-        "  python main.py common --csv data/student_a.csv \\\n"
-        "                        --csv data/student_b.csv                找共同空闲\n"
-        "  python main.py manual                                          手动录入课表\n"
-        "  python main.py convert data/raw_timetable_sample.csv           转换教务原始课表\n\n"
+        "  python main.py show --csv data/student_a.csv         打印本周课表\n"
+        "  python main.py free --csv data/student_a.csv         算空闲时段\n"
+        "  python main.py common --csv data/同学A课表.csv \\\n"
+        "                        --csv data/同学B课表.csv          找共同空闲\n"
+        "  python main.py manual                                 手动录入课表\n"
+        "  python main.py convert data/同学A课表.csv             转换教务原始课表\n\n"
         "加 -h 看每个命令的详细用法：python main.py common -h"
     )
     return 0

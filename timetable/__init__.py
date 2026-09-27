@@ -28,6 +28,7 @@ from .loader import (
     load_csv,
     load_many,
     load_text,
+    owner_from_filename,
     prompt_manual_timetable,
     read_text_file,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "load_many",
     "load_text",
     "read_text_file",
+    "owner_from_filename",
     "prompt_manual_timetable",
     "TimetableFormatError",
     "STANDARD_FIELDS",

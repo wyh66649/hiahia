@@ -33,6 +33,7 @@ __all__ = [
     "load_text",
     "load_csv",
     "load_many",
+    "owner_from_filename",
     "prompt_manual_timetable",
 ]
 
@@ -192,17 +193,35 @@ def _parse_standard_text(text: str, owner: str = "我", strict: bool = False) ->
 def load_csv(path: str, owner: Optional[str] = None, encoding: Optional[str] = None, strict: bool = False) -> Timetable:
     """读一个课表 CSV 文件。
 
-    ``owner`` 不给的话，标准格式用文件名当名字（``data/张三.csv`` -> ``张三``），
-    网格格式优先用课表里印着的姓名。
+    名字的优先级：**显式传入的 owner > 课表里印着的姓名 > 文件名**。
+    文件名会顺手去掉 ``课表`` / ``课程表`` / ``_raw`` 这类后缀，
+    ``data/张三课表.csv`` 就会显示成「张三」。
     """
     text = read_text_file(path, encoding=encoding)
-    if owner is not None:
-        return load_text(text, owner=owner, strict=strict)
+    file_owner = owner_from_filename(path)
+
     if looks_like_grid(text):
-        # 网格课表里印着姓名，直接用；没有才退回文件名
-        return load_text(text, owner=None, strict=strict)
-    file_owner = os.path.splitext(os.path.basename(path))[0] or "我"
-    return load_text(text, owner=file_owner, strict=strict)
+        parsed = parse_grid_text(text)
+        return Timetable(owner=owner or parsed.owner or file_owner).extend(parsed.courses())
+
+    return _parse_standard_text(text, owner=owner or file_owner, strict=strict)
+
+
+#: 从文件名推名字时要剥掉的尾巴
+_OWNER_SUFFIXES = ("课程表", "课表", "timetable", "_raw", "-raw", "_课表")
+
+
+def owner_from_filename(path: str) -> str:
+    """``data/张三课表.csv`` -> ``张三``；去掉常见后缀，认不出就原样返回。"""
+    stem = os.path.splitext(os.path.basename(path))[0].strip() or "我"
+    lowered = stem.lower()
+    for suffix in _OWNER_SUFFIXES:
+        if lowered.endswith(suffix.lower()) and len(stem) > len(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    # 顺手把 "_timetable" 留下的下划线、连字符之类也去掉
+    cleaned = stem.strip().strip("_-— ").strip()
+    return cleaned or stem.strip() or "我"
 
 
 def load_many(paths: Iterable[str], **kwargs) -> List[Timetable]:

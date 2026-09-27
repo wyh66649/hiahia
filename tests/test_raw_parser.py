@@ -14,7 +14,7 @@ from timetable.raw_parser import (
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW_SAMPLE = os.path.join(ROOT, "data", "raw_timetable_sample.csv")
+RAW_SAMPLE = os.path.join(ROOT, "data", "同学A课表.csv")
 
 HEADER = ["节次/星期", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
@@ -133,25 +133,37 @@ class ParseGridTextTests(unittest.TestCase):
         self.assertEqual(len(deduplicate(records)), 1)  # 同名同时间，只留一条
 
 
-class RawSampleFileTests(unittest.TestCase):
-    """跑一遍仓库里的示例原始课表，保证端到端可用。"""
+class RealTimetableFileTests(unittest.TestCase):
+    """跑一遍仓库里的真实（已脱敏）教务课表，保证端到端可用。"""
 
     def setUp(self):
         if not os.path.exists(RAW_SAMPLE):
             self.skipTest("没有找到示例原始课表")
         self.table = load_csv(RAW_SAMPLE)
 
-    def test_owner_taken_from_file(self):
-        self.assertEqual(self.table.owner, "示例同学")
+    def test_owner_falls_back_to_filename(self):
+        """标题行里的姓名学号已抹掉，名字就取文件名。"""
+        self.assertEqual(self.table.owner, "同学A")
 
     def test_course_count(self):
-        self.assertEqual(len(self.table), 19)
+        self.assertEqual(len(self.table), 18)
 
-    def test_saturday_has_three_courses(self):
-        self.assertEqual(len(self.table.courses_on("周六")), 3)
+    def test_sunday_has_three_courses(self):
+        self.assertEqual(len(self.table.courses_on("周日")), 3)
 
-    def test_no_course_on_sunday(self):
-        self.assertEqual(self.table.courses_on("周日"), [])
+    def test_no_course_on_saturday(self):
+        self.assertEqual(self.table.courses_on("周六"), [])
+
+    def test_multi_week_cell_merged_into_one(self):
+        """周二一格的「大学生心理健康教育」写了 5 个不同周次，应当只有 1 条。"""
+        tuesday = [c for c in self.table.courses_on("周二") if c.name == "大学生心理健康教育"]
+        self.assertEqual(len(tuesday), 1)
+        self.assertEqual(str(tuesday[0].slot), "08:00-10:30")
+
+    def test_course_code_stripped(self):
+        names = {c.name for c in self.table}
+        self.assertIn("工科数学分析Ⅰ", names)
+        self.assertNotIn("工科数学分析Ⅰ 07", names)
 
 
 if __name__ == "__main__":
