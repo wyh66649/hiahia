@@ -8,6 +8,7 @@ from timetable.loader import (
     TimetableFormatError,
     load_csv,
     load_text,
+    owner_from_filename,
     prompt_manual_timetable,
     read_text_file,
 )
@@ -104,6 +105,22 @@ class FileEncodingTests(unittest.TestCase):
     def test_owner_defaults_to_filename(self):
         path = self._write("张三.csv", STANDARD, "utf-8")
         self.assertEqual(load_csv(path).owner, "张三")
+
+    def test_owner_strips_common_suffixes(self):
+        """data/同学A课表.csv -> 同学A"""
+        cases = {
+            "同学A课表.csv": "同学A",
+            "李四课程表.csv": "李四",
+            "王五_timetable.csv": "王五",
+        }
+        for filename, expected in cases.items():
+            with self.subTest(filename=filename):
+                path = self._write(filename, STANDARD, "utf-8")
+                self.assertEqual(load_csv(path).owner, expected)
+
+    def test_owner_suffix_only_falls_back(self):
+        """文件名就叫「课表」时别把自己剥没了。"""
+        self.assertEqual(owner_from_filename("课表.csv"), "课表")
 
     def test_explicit_owner_wins(self):
         path = self._write("xyz.csv", STANDARD, "utf-8")
